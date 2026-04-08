@@ -12,6 +12,8 @@ from flextoolslib import *
 from SIL.LCModel import IWfiWordformRepository, ISegmentRepository
 from SIL.LCModel.Core.KernelInterfaces import ITsString
 
+from FT_Custom_Dialogs import FTChooseFromList
+
 docs = {
     FTM_Name: "Merge Analyses",
     FTM_Version: 1,
@@ -183,10 +185,11 @@ def MergeAnalyses(project, report, modifyAllowed=False):
         ]
         wf_choices.append("-- Done --")
 
-        chosen_wf = FTDialogChoose(
+        chosen_wf = FTChooseFromList(
             "Wordforms with multiple analyses  ({0} remaining).\n"
             "Select one to merge, or '-- Done --' to exit:".format(len(multi_wf)),
-            wf_choices
+            wf_choices,
+            width=500, height=350,
         )
 
         if not chosen_wf or chosen_wf == "-- Done --":
@@ -212,11 +215,12 @@ def MergeAnalyses(project, report, modifyAllowed=False):
                 idx + 1, desc, occ, "s" if occ != 1 else ""))
         ana_choices.append("-- Skip this wordform --")
 
-        chosen_ana = FTDialogChoose(
+        chosen_ana = FTChooseFromList(
             "Analyses for '{0}'.\n"
             "Select the analysis to KEEP "
             "(all others will be repointed to it, then deleted):".format(form),
-            ana_choices
+            ana_choices,
+            width=700, height=350, monospace=True,
         )
 
         if not chosen_ana or chosen_ana == "-- Skip this wordform --":
