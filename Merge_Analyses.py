@@ -17,7 +17,7 @@ from flextoolslib import *
 from SIL.LCModel import IWfiWordformRepository, ISegmentRepository
 from SIL.LCModel.Core.KernelInterfaces import ITsString
 
-from FT_Custom_Dialogs import FTPickAnalysis
+from FT_Custom_Dialogs import FTPickAnalysis, FTChooseFromList
 
 docs = {
     FTM_Name: "Merge Analyses",
@@ -222,6 +222,48 @@ def MergeAnalyses(project, report, modifyAllowed=False):
             losers = [a for i, a in enumerate(analyses) if i != survivor_idx]
 
             report.Info("'{0}': keeping analysis [{1}].".format(form, survivor_idx + 1))
+
+            # ----------------------------------------------------------
+            # Optional: if the survivor has multiple glosses, let the
+            # user pick one to keep (cancel = keep all, proceed anyway).
+            # ----------------------------------------------------------
+            gloss_list = list(survivor.MeaningsOC)
+            if len(gloss_list) > 1:
+                gloss_labels = []
+                for g in gloss_list:
+                    try:
+                        ts = g.Form.get_String(wsa)
+                        gloss_labels.append(ts.Text if ts and ts.Text else "(empty)")
+                    except Exception:
+                        gloss_labels.append("(error)")
+
+                chosen_gloss = FTChooseFromList(
+                    "Analysis [{0}] for '{1}' has {2} glosses.\n"
+                    "Select the gloss to KEEP (cancel = keep all):".format(
+                        survivor_idx + 1, form, len(gloss_list)),
+                    gloss_labels,
+                    width=500, height=300,
+                )
+
+                if chosen_gloss is not None:
+                    keep_idx = next(
+                        (i for i, s in enumerate(gloss_labels) if s == chosen_gloss),
+                        None)
+                    if keep_idx is not None:
+                        for i, g in enumerate(gloss_list):
+                            if i == keep_idx:
+                                continue
+                            if modifyAllowed:
+                                try:
+                                    survivor.MeaningsOC.Remove(g)
+                                    report.Info("  Removed gloss '{0}'.".format(
+                                        gloss_labels[i]))
+                                except Exception as e:
+                                    report.Error("  Could not remove gloss '{0}': {1}".format(
+                                        gloss_labels[i], str(e)))
+                            else:
+                                report.Info("  [DRY RUN] Would remove gloss '{0}'.".format(
+                                    gloss_labels[i]))
 
             total_repointed = 0
 
