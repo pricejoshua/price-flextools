@@ -7,10 +7,12 @@
 # resizable dialogs suited to long strings or many items.
 #
 # Classes:
-#   ListChooserDialog   -- scrollable ListBox chooser
+#   ListChooserDialog     -- scrollable ListBox chooser
+#   AnalysisPickerDialog  -- sequential per-wordform analysis picker
 #
 # Functions (drop-in replacements / supplements for FTDialog*):
-#   FTChooseFromList    -- replacement for FTDialogChoose
+#   FTChooseFromList  -- replacement for FTDialogChoose
+#   FTPickAnalysis    -- sequential analysis picker for Merge Analyses workflow
 #
 
 import clr
@@ -23,7 +25,7 @@ from System.Windows.Forms import (
     DockStyle, AnchorStyles, DialogResult,
     SelectionMode,
 )
-from System.Drawing import Size, Point, Color, Font
+from System.Drawing import Size, Point, Color, Font, FontStyle
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -35,12 +37,19 @@ _BTN_W    = 80   # individual button width
 _BTN_GAP  = 8    # gap between buttons / right edge
 
 _MONO_FONT = None   # lazily created
+_BOLD_FONT = None
 
 def _mono_font():
     global _MONO_FONT
     if _MONO_FONT is None:
         _MONO_FONT = Font("Courier New", 9)
     return _MONO_FONT
+
+def _bold_font(size=13):
+    global _BOLD_FONT
+    if _BOLD_FONT is None:
+        _BOLD_FONT = Font("Segoe UI", size, FontStyle.Bold)
+    return _BOLD_FONT
 
 
 def _apply_icon(dlg):
@@ -175,6 +184,175 @@ class ListChooserDialog(Form):
 
 
 # ---------------------------------------------------------------------------
+# AnalysisPickerDialog
+# ---------------------------------------------------------------------------
+
+class AnalysisPickerDialog(Form):
+    """
+    Sequential per-wordform analysis picker for the Merge Analyses workflow.
+
+    Shows one wordform at a time with all its analyses. The user picks
+    which analysis to keep, skips the wordform, jumps to a different one
+    via Browse All, or cancels entirely.
+
+    Parameters
+    ----------
+    wordform        Vernacular string for the current wordform.
+    analyses        List of strings describing each analysis (monospace).
+    current_idx     0-based index of this wordform in the remaining list.
+    total           Total number of remaining wordforms.
+    all_wordforms   List of strings for all remaining wordforms (for Browse All).
+    width / height  Initial dialog size.
+
+    Usage
+    -----
+        action, value = AnalysisPickerDialog(...).Show()
+
+    Return values
+    -------------
+        ('keep',   int)   -- keep the analysis at this index
+        ('skip',   None)  -- skip this wordform
+        ('jump',   int)   -- jump to the wordform at this index in all_wordforms
+        ('cancel', None)  -- stop processing entirely
+    """
+
+    def __init__(self, wordform, analyses, current_idx, total, all_wordforms,
+                 width=720, height=400):
+        Form.__init__(self)
+
+        self.Text = "Merge Analyses"
+        self.ClientSize = Size(width, height)
+        self.StartPosition = FormStartPosition.CenterScreen
+        self.FormBorderStyle = FormBorderStyle.Sizable
+        self.MinimizeBox = False
+        self.MaximizeBox = True
+        self.MinimumSize = Size(520, 320)
+
+        self._result = ('cancel', None)
+        self._all_wordforms = list(all_wordforms)
+
+        M = _MARGIN
+
+        # ---- Status: "Wordform 3 of 12:" --------------------------------
+        status = Label()
+        status.Text = "Wordform {0} of {1}:".format(current_idx + 1, total)
+        status.Location = Point(M, M)
+        status.Size = Size(width - M * 2, 18)
+        status.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+        self.Controls.Add(status)
+
+        # ---- Wordform name (large bold) ----------------------------------
+        wf_label = Label()
+        wf_label.Text = wordform
+        wf_label.Location = Point(M, M + 20)
+        wf_label.Size = Size(width - M * 2, 28)
+        wf_label.Font = _bold_font(13)
+        wf_label.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+        self.Controls.Add(wf_label)
+
+        # ---- Instruction ------------------------------------------------
+        instruction = Label()
+        instruction.Text = "Select the analysis to KEEP, then click Keep Selected (or double-click):"
+        instruction.Location = Point(M, M + 52)
+        instruction.Size = Size(width - M * 2, 18)
+        instruction.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+        self.Controls.Add(instruction)
+
+        # ---- Analyses ListBox -------------------------------------------
+        LB_TOP = M + 52 + 20 + 4
+        LB_H = height - LB_TOP - _BTN_H - M
+        self._listbox = ListBox()
+        self._listbox.Location = Point(M, LB_TOP)
+        self._listbox.Size = Size(width - M * 2, LB_H)
+        self._listbox.Anchor = (AnchorStyles.Top    | AnchorStyles.Bottom |
+                                AnchorStyles.Left   | AnchorStyles.Right)
+        self._listbox.SelectionMode = SelectionMode.One
+        self._listbox.HorizontalScrollbar = True
+        self._listbox.IntegralHeight = False
+        self._listbox.Font = _mono_font()
+
+        for ana in analyses:
+            self._listbox.Items.Add(str(ana))
+        if self._listbox.Items.Count > 0:
+            self._listbox.SelectedIndex = 0
+
+        self._listbox.DoubleClick += lambda s, e: self._keep()
+        self.Controls.Add(self._listbox)
+
+        # ---- Button panel -----------------------------------------------
+        # Right to left: Cancel | Browse All... | Skip | Keep Selected
+        btn_panel = Panel()
+        btn_panel.Height = _BTN_H
+        btn_panel.Dock = DockStyle.Bottom
+        btn_panel.BackColor = Color.LightGray
+        self.Controls.Add(btn_panel)
+
+        W_KEEP   = 120
+        W_SKIP   = 80
+        W_BROWSE = 110
+        W_CANCEL = 80
+        G = _BTN_GAP
+
+        x = width - G
+        for text, w, handler in [
+            ("Cancel",       W_CANCEL, self._cancel),
+            ("Browse All...", W_BROWSE, self._browse),
+            ("Skip",         W_SKIP,   self._skip),
+            ("Keep Selected", W_KEEP,  self._keep),
+        ]:
+            x -= w
+            btn = Button()
+            btn.Text = text
+            btn.Size = Size(w, 26)
+            btn.Location = Point(x, 9)
+            btn.Anchor = AnchorStyles.Right | AnchorStyles.Top
+            btn.Click += lambda s, e, h=handler: h()
+            btn_panel.Controls.Add(btn)
+            x -= G
+
+            if text == "Keep Selected":
+                self.AcceptButton = btn
+            if text == "Cancel":
+                self.CancelButton = btn
+
+        self.ActiveControl = self._listbox
+
+    # ---- Button handlers ------------------------------------------------
+
+    def _keep(self):
+        if self._listbox.SelectedIndex >= 0:
+            self._result = ('keep', self._listbox.SelectedIndex)
+            self.DialogResult = DialogResult.OK
+            self.Close()
+
+    def _skip(self):
+        self._result = ('skip', None)
+        self.DialogResult = DialogResult.OK
+        self.Close()
+
+    def _browse(self):
+        chosen = FTChooseFromList(
+            "Jump to a wordform:",
+            self._all_wordforms,
+            width=500, height=350,
+        )
+        if chosen and chosen in self._all_wordforms:
+            self._result = ('jump', self._all_wordforms.index(chosen))
+            self.DialogResult = DialogResult.OK
+            self.Close()
+
+    def _cancel(self):
+        self._result = ('cancel', None)
+        self.DialogResult = DialogResult.OK
+        self.Close()
+
+    def Show(self):
+        """Display modally. Returns (action, value) — see class docstring."""
+        self.ShowDialog()
+        return self._result
+
+
+# ---------------------------------------------------------------------------
 # Public functional wrappers
 # ---------------------------------------------------------------------------
 
@@ -198,5 +376,33 @@ def FTChooseFromList(prompt, items,
     """
     dlg = ListChooserDialog(prompt, items,
                             width=width, height=height, monospace=monospace)
+    _apply_icon(dlg)
+    return dlg.Show()
+
+
+def FTPickAnalysis(wordform, analyses, current_idx, total, all_wordforms,
+                   width=720, height=400):
+    """
+    Show a sequential analysis picker for the Merge Analyses workflow.
+
+    Parameters
+    ----------
+    wordform        Vernacular string for the current wordform.
+    analyses        List of strings describing each analysis.
+    current_idx     0-based position in the remaining wordform list.
+    total           Total remaining wordforms.
+    all_wordforms   Full list of remaining wordform labels (for Browse All).
+    width / height  Initial dialog size.
+
+    Returns
+    -------
+    (action, value) tuple:
+        ('keep',   int)   keep analysis at this index
+        ('skip',   None)  skip this wordform
+        ('jump',   int)   jump to wordform at this index in all_wordforms
+        ('cancel', None)  stop entirely
+    """
+    dlg = AnalysisPickerDialog(wordform, analyses, current_idx, total,
+                               all_wordforms, width=width, height=height)
     _apply_icon(dlg)
     return dlg.Show()
