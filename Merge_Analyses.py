@@ -90,6 +90,18 @@ def describe_analysis(analysis):
     return "  |  ".join(parts)
 
 
+def get_analysis_hvo(ann):
+    """
+    Return the IWfiAnalysis HVO for a text-annotation slot.
+    Slots can hold IWfiGloss (.Analysis points to parent IWfiAnalysis)
+    or IWfiAnalysis directly (no .Analysis attribute).
+    """
+    try:
+        return ann.Analysis.Hvo   # IWfiGloss
+    except AttributeError:
+        return ann.Hvo            # IWfiAnalysis itself
+
+
 def count_occurrences(project, target_hvo):
     """Count word-token slots across all texts that point to target_hvo."""
     count = 0
@@ -97,7 +109,7 @@ def count_occurrences(project, target_hvo):
         try:
             for ann in seg.AnalysesRS:
                 try:
-                    if ann.Analysis and ann.Analysis.Hvo == target_hvo:
+                    if get_analysis_hvo(ann) == target_hvo:
                         count += 1
                 except Exception:
                     pass
@@ -119,7 +131,7 @@ def repoint_occurrences(project, from_hvo, to_analysis):
             for i in range(rs.Count - 1, -1, -1):
                 try:
                     ann = rs[i]
-                    if ann.Analysis and ann.Analysis.Hvo == from_hvo:
+                    if get_analysis_hvo(ann) == from_hvo:
                         rs.RemoveAt(i)
                         rs.Insert(i, to_analysis)
                         repointed += 1
