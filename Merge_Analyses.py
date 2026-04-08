@@ -7,6 +7,10 @@
 # other analyses to the survivor and deletes the duplicates.
 #
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from flextoolslib import *
 
 from SIL.LCModel import IWfiWordformRepository, ISegmentRepository

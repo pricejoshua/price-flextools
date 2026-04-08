@@ -54,12 +54,11 @@ Modules/
     Merge_Analyses.py
     FT_Custom_Dialogs.py
     ...
-  PriceTools.pth     ← copy PriceTools.pth here (one level up from the repo)
 ```
 
-The `PriceTools.pth` file (included in the repo root) must be placed in the **parent** `Modules/` directory. FlexTools calls `site.addsitedir(Modules/)`, which processes `.pth` files there and adds `Modules/PriceTools/` to `sys.path` — this is what makes `from FT_Custom_Dialogs import ...` work inside modules.
-
 Modules will appear in the FlexTools UI as `PriceTools.Duplicate Entry`, etc.
+
+Modules that import `FT_Custom_Dialogs` add their own directory to `sys.path` at the top of the file, so no extra setup is needed.
 
 ## Test data
 
